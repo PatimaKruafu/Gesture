@@ -1,5 +1,17 @@
-from ultralytics import YOLO
+import mediapipe as mp
+import cv2
 
-model = YOLO('Weight/best.pt')
 
-results = model(source=0, show=True, conf=0.6, save=False)
+
+
+hand_gestures = "tasks/gesture_recognizer.task"
+
+hand_landmarks = "tasks/hand_landmarker.task"
+
+
+# Use OpenCV’s VideoCapture to start capturing from the webcam.
+
+# Create a loop to read the latest frame from the camera using VideoCapture#read()
+
+# Convert the frame received from OpenCV to a MediaPipe’s Image object.
+mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=numpy_frame_from_opencv)
