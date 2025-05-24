@@ -157,6 +157,7 @@ def main():
             
             frame_bgr_original = cv2.flip(frame_bgr_original, 1)
 
+            # Run the clock and capture the frame for every N frame provided from PROCESS_EVERY_N_FRAMES
             frame_skip_counter += 1
             if frame_skip_counter % PROCESS_EVERY_N_FRAMES == 0:
                 frame_timestamp_ms = int(time.time() * 1000)
