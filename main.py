@@ -266,17 +266,11 @@ def main():
         window_name = 'Dynamic ROI HCI (M: Toggle, Q: Quit)'
         
         #cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        
-
-
-
         prev_frame_time = 0
 
         while cap.isOpened():
             ret, frame_bgr_original = cap.read()
             if not ret: print("Ignoring empty camera frame."); break
-            
-
             ###
             frame_h, frame_w, _ = frame_bgr_original.shape # Note: cv2 shape is (height, width, channels)
             #del test_frame # We don't need it anymore
@@ -344,15 +338,6 @@ def main():
             ROI_POWER_X = 1.5 
             ROI_POWER_Y = 1.5
 
-            ###
-
-
-
-            ###WINDOW SIZE
-
-
-            ###WINDOW SIZE
-
 
             frame_bgr_original = cv2.flip(frame_bgr_original, 1)
             current_frame_timestamp_ms = int(time.time() * 1000)
@@ -376,7 +361,6 @@ def main():
                 _, active_hand_landmarks, _ = latest_hand_landmarks_data[0] # landmarks_list
 
             # --- DYNAMIC ROI AND GESTURE LOGIC ---
-            # --- DYNAMIC ROI AND GESTURE LOGIC ---
             if active_hand_landmarks:
                 cursor_anchor_point = get_landmark(active_hand_landmarks, WRIST) # Define the anchor for this frame (WRIST)
 
@@ -385,7 +369,7 @@ def main():
                 # --- DEBUG PRINT BEFORE FIST CHECK ---
                 #print(f"DBG_FIST_CONDITIONS: latest_gesture='{latest_detected_gesture}', mouse_active={is_mouse_control_active}, anchor_is_None={cursor_anchor_point is None}")
                 #if cursor_anchor_point:
-                    #print(f"                       anchor_pos=({cursor_anchor_point.x:.3f}, {cursor_anchor_point.y:.3f})")
+                    #print(f"anchor_pos=({cursor_anchor_point.x:.3f}, {cursor_anchor_point.y:.3f})")
 
 
                 # --- "Closed_Fist" for ROI Movement ---
