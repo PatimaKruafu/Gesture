@@ -144,7 +144,9 @@ hand_options = HandLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=hand_landmarker_path),
     running_mode=VisionRunningMode.LIVE_STREAM, num_hands=1,
     min_hand_detection_confidence=0.5, min_hand_presence_confidence=0.5,
-    min_tracking_confidence=0.5, result_callback=hand_landmarker_callback)
+    min_tracking_confidence=0.5,
+    result_callback=hand_landmarker_callback
+    )
 
 
 # --- Gesture Recognizer Callback ---
