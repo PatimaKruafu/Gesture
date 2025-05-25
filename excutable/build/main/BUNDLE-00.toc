@@ -1,0 +1,3 @@
+([('main',
+   '/Users/stillalive/Uni_Works/Year3/Sem2/CMM440_MachineLearning/Final_Project/Gesture/excutable/dist/main',
+   'EXECUTABLE')],)
