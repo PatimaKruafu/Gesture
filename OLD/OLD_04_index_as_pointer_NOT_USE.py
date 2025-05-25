@@ -151,22 +151,18 @@ def is_dragon_claw_gesture(landmarks):
 def main():
     global latest_annotated_frame_rgb, latest_hand_landmarks_data
     global prev_cursor_x, prev_cursor_y, prev_pyautogui_x, prev_pyautogui_y
-    global is_mouse_control_active # Modifiable by key press
-    # These are effectively local to main's loop, but depend on globals like is_mouse_control_active
-    # is_dragon_claw_active_current_frame (local)
-    # can_attempt_cursor_control (local)
+    global is_mouse_control_active 
     global prev_index_tip_y, prev_middle_tip_y
     global last_left_click_time, last_right_click_time
 
-    last_wrist_pos_for_roi_check = None # Initialize to None
-
     # --- DYNAMIC ROI INITIALIZATION ---
-    current_roi_center_x = 0.5  # Start ROI in the center of camera view
+    current_roi_center_x = 0.5
     current_roi_center_y = 0.5
-    last_wrist_pos_for_roi_check = None # This will store a NormalizedLandmark object
-    time_wrist_stable_at_pos_start_ms = 0 # Timestamp when wrist became stable
-    ROI_RECENTER_STABILITY_DURATION_MS = 2000  # 3 seconds for ROI to recenter
-    ROI_RECENTER_MOVEMENT_THRESHOLD = 0.03     # Normalized distance for stability
+    # last_wrist_pos_for_roi_check will now be last_ANCHOR_pos_for_roi_check
+    last_anchor_pos_for_roi_check = None # This will store a NormalizedLandmark object (now index tip)
+    time_anchor_stable_at_pos_start_ms = 0 # Timestamp when anchor became stable
+    ROI_RECENTER_STABILITY_DURATION_MS = 3000
+    ROI_RECENTER_MOVEMENT_THRESHOLD = 0.03    
 
     # --- Other Main Loop State Variables ---
     prev_is_dragon_claw_active = False 
@@ -175,79 +171,74 @@ def main():
     
     with HandLandmarker.create_from_options(hand_options) as landmarker:
         cap = cv2.VideoCapture(0)
+        # ... (cap setup, window name, prev_frame_time) ...
         if not cap.isOpened(): print("Error: Could not open webcam."); return
-        window_name = 'Dynamic ROI HCI (M: Toggle, Q: Quit)'
+        window_name = 'Dynamic ROI HCI - Index Finger (M: Toggle, Q: Quit)' # Updated window name
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         prev_frame_time = 0
 
+
         while cap.isOpened():
+            # ... (frame capture, basic prep, MP async call - unchanged) ...
             ret, frame_bgr_original = cap.read()
             if not ret: print("Ignoring empty camera frame."); break
-            
             frame_bgr_original = cv2.flip(frame_bgr_original, 1)
             current_frame_timestamp_ms = int(time.time() * 1000)
-
             frame_rgb = cv2.cvtColor(frame_bgr_original, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
             landmarker.detect_async(mp_image, current_frame_timestamp_ms)
-            
             display_frame_bgr = frame_bgr_original.copy()
             if latest_annotated_frame_rgb is not None:
                 display_frame_bgr = cv2.cvtColor(latest_annotated_frame_rgb, cv2.COLOR_RGB2BGR)
 
+
             active_hand_landmarks = None
-            is_dragon_claw_active_current_frame = False # Default for this frame
+            is_dragon_claw_active_current_frame = False
 
-            if latest_hand_landmarks_data: # If mediapipe callback provided data
-                _, active_hand_landmarks, _ = latest_hand_landmarks_data[0] # landmarks_list
+            if latest_hand_landmarks_data:
+                _, active_hand_landmarks, _ = latest_hand_landmarks_data[0]
 
-            # --- DYNAMIC ROI AND GESTURE LOGIC ---
+            # --- DYNAMIC ROI AND GESTURE LOGIC (NOW BASED ON INDEX_TIP FOR ROI) ---
+            cursor_anchor_point = None # This will be our INDEX_TIP
             if active_hand_landmarks:
-                palm_anchor_point = get_landmark(active_hand_landmarks, WRIST)
+                cursor_anchor_point = get_landmark(active_hand_landmarks, INDEX_TIP) # **** CHANGED TO INDEX_TIP ****
                 is_dragon_claw_active_current_frame = is_dragon_claw_gesture(active_hand_landmarks)
 
-                # Dynamic ROI Re-centering
-                if last_wrist_pos_for_roi_check is not None:
-                    # Check distance using only X and Y for stability in plane
-                    #temp_last_wrist = mp.tasks.vision.NormalizedLandmark(x=last_wrist_pos_for_roi_check.x, y=last_wrist_pos_for_roi_check.y, z=0)
-                    #temp_palm_anchor = mp.tasks.vision.NormalizedLandmark(x=palm_anchor_point.x, y=palm_anchor_point.y, z=0)
-                    #dist_moved = calculate_distance(temp_palm_anchor, temp_last_wrist)
-                    dist_moved = calculate_distance(palm_anchor_point, last_wrist_pos_for_roi_check)
+                # Dynamic ROI Re-centering Logic (uses cursor_anchor_point)
+                if last_anchor_pos_for_roi_check is not None:
+                    #temp_last_anchor = mp.tasks.vision.NormalizedLandmark(x=last_anchor_pos_for_roi_check.x, y=last_anchor_pos_for_roi_check.y, z=0)
+                    #temp_cursor_anchor = mp.tasks.vision.NormalizedLandmark(x=cursor_anchor_point.x, y=cursor_anchor_point.y, z=0)
+                    #dist_moved = calculate_distance(temp_cursor_anchor, temp_last_anchor)
+                    dist_moved = calculate_distance(cursor_anchor_point, last_anchor_pos_for_roi_check)
 
                     if dist_moved < ROI_RECENTER_MOVEMENT_THRESHOLD:
-                        if time_wrist_stable_at_pos_start_ms == 0: # Just became stable
-                            time_wrist_stable_at_pos_start_ms = current_frame_timestamp_ms
-                        elif current_frame_timestamp_ms - time_wrist_stable_at_pos_start_ms > ROI_RECENTER_STABILITY_DURATION_MS:
-                            # Re-center ROI
-                            current_roi_center_x = palm_anchor_point.x
-                            current_roi_center_y = palm_anchor_point.y
-                            time_wrist_stable_at_pos_start_ms = 0 
-                            #last_wrist_pos_for_roi_check = mp.tasks.vision.NormalizedLandmark(x=palm_anchor_point.x, y=palm_anchor_point.y, z=getattr(palm_anchor_point, 'z', 0))
-                            last_wrist_pos_for_roi_check = palm_anchor_point
-                            # Mitigate cursor jump when ROI re-centers
+                        if time_anchor_stable_at_pos_start_ms == 0:
+                            time_anchor_stable_at_pos_start_ms = current_frame_timestamp_ms
+                        elif current_frame_timestamp_ms - time_anchor_stable_at_pos_start_ms > ROI_RECENTER_STABILITY_DURATION_MS:
+                            current_roi_center_x = cursor_anchor_point.x # Re-center on INDEX_TIP
+                            current_roi_center_y = cursor_anchor_point.y # Re-center on INDEX_TIP
+                            time_anchor_stable_at_pos_start_ms = 0 
+                            last_anchor_pos_for_roi_check = cursor_anchor_point # Store the INDEX_TIP object
+                            
                             actual_mouse_x, actual_mouse_y = pyautogui.position()
                             prev_cursor_x, prev_pyautogui_x = actual_mouse_x, actual_mouse_x
                             prev_cursor_y, prev_pyautogui_y = actual_mouse_y, actual_mouse_y
                             last_valid_target_x, last_valid_target_y = actual_mouse_x, actual_mouse_y
-                            # print(f"DBG ROI Re-centered to: ({current_roi_center_x:.2f}, {current_roi_center_y:.2f})")
-                            
-                    else: # Wrist moved too much
-                        time_wrist_stable_at_pos_start_ms = 0
-                        #last_wrist_pos_for_roi_check = mp.tasks.vision.NormalizedLandmark(x=palm_anchor_point.x, y=palm_anchor_point.y, z=getattr(palm_anchor_point, 'z', 0))
-                        last_wrist_pos_for_roi_check = palm_anchor_point
-                else: # First time seeing the hand
-                    #last_wrist_pos_for_roi_check = mp.tasks.vision.NormalizedLandmark(x=palm_anchor_point.x, y=palm_anchor_point.y, z=getattr(palm_anchor_point, 'z', 0))
-                    last_wrist_pos_for_roi_check = palm_anchor_point
-                    time_wrist_stable_at_pos_start_ms = 0 
+                            # print(f"DBG ROI Re-centered to Index Tip: ({current_roi_center_x:.2f}, {current_roi_center_y:.2f})")
+                    else: 
+                        time_anchor_stable_at_pos_start_ms = 0
+                        last_anchor_pos_for_roi_check = cursor_anchor_point # Store the INDEX_TIP object
+                else: 
+                    last_anchor_pos_for_roi_check = cursor_anchor_point # Store the INDEX_TIP object
+                    time_anchor_stable_at_pos_start_ms = 0 
             else: # No hand landmarks
-                last_wrist_pos_for_roi_check = None
-                time_wrist_stable_at_pos_start_ms = 0
+                last_anchor_pos_for_roi_check = None
+                time_anchor_stable_at_pos_start_ms = 0
                 is_dragon_claw_active_current_frame = False
-                # Reset tap click prev_y states
                 prev_index_tip_y = 0.5 
                 prev_middle_tip_y = 0.5
 
-            # Calculate current dynamic ROI boundaries AFTER potential re-centering
+            # Calculate current dynamic ROI boundaries
             clamped_roi_center_x = np.clip(current_roi_center_x, ROI_HALF_WIDTH, 1.0 - ROI_HALF_WIDTH)
             clamped_roi_center_y = np.clip(current_roi_center_y, ROI_HALF_HEIGHT, 1.0 - ROI_HALF_HEIGHT)
             dynamic_roi_x_min = clamped_roi_center_x - ROI_HALF_WIDTH
@@ -255,39 +246,38 @@ def main():
             dynamic_roi_y_min = clamped_roi_center_y - ROI_HALF_HEIGHT
             dynamic_roi_y_max = clamped_roi_center_y + ROI_HALF_HEIGHT
 
-            # --- Determine if cursor control can proceed this frame ---
+            # --- Determine if cursor control can proceed ---
             can_attempt_cursor_control = is_mouse_control_active and is_dragon_claw_active_current_frame
 
             if not prev_is_dragon_claw_active and is_dragon_claw_active_current_frame: # Clutch
                 actual_mouse_x, actual_mouse_y = pyautogui.position()
-                prev_cursor_x, prev_pyautogui_x = actual_mouse_x, actual_mouse_x
-                prev_cursor_y, prev_pyautogui_y = actual_mouse_y, actual_mouse_y
-                last_valid_target_x, last_valid_target_y = actual_mouse_x, actual_mouse_y
-                # print("DBG CLUTCH: Dragon Claw just (re)engaged.")
+                # ... (reset prev_cursor_x etc. as before) ...
+                prev_cursor_x, prev_pyautogui_x, last_valid_target_x = actual_mouse_x, actual_mouse_x, actual_mouse_x
+                prev_cursor_y, prev_pyautogui_y, last_valid_target_y = actual_mouse_y, actual_mouse_y, actual_mouse_y
 
-            # --- CURSOR MOVEMENT LOGIC ---
-            target_x_for_smoothing = last_valid_target_x # Default to last valid
+
+            # --- CURSOR MOVEMENT LOGIC (USES cursor_anchor_point = INDEX_TIP) ---
+            target_x_for_smoothing = last_valid_target_x
             target_y_for_smoothing = last_valid_target_y
             update_cursor_this_frame = False 
 
-            if active_hand_landmarks and can_attempt_cursor_control:
-                # palm_anchor_point is already defined (WRIST)
-                hand_in_roi_x = (palm_anchor_point.x >= dynamic_roi_x_min and palm_anchor_point.x <= dynamic_roi_x_max)
-                hand_in_roi_y = (palm_anchor_point.y >= dynamic_roi_y_min and palm_anchor_point.y <= dynamic_roi_y_max)
-                is_hand_in_roi = hand_in_roi_x and hand_in_roi_y # Local variable for clarity
+            if active_hand_landmarks and can_attempt_cursor_control: # Check active_hand_landmarks again to ensure cursor_anchor_point is valid
+                # cursor_anchor_point is already INDEX_TIP from above
+                hand_in_roi_x = (cursor_anchor_point.x >= dynamic_roi_x_min and cursor_anchor_point.x <= dynamic_roi_x_max)
+                hand_in_roi_y = (cursor_anchor_point.y >= dynamic_roi_y_min and cursor_anchor_point.y <= dynamic_roi_y_max)
+                is_hand_in_roi = hand_in_roi_x and hand_in_roi_y
                 
-                # print(f"DBG PreROI: CtrlON={is_mouse_control_active}, ClawON={is_dragon_claw_active_current_frame}, AttemptCtrl={can_attempt_cursor_control}, InROI={is_hand_in_roi}, WristXY=({palm_anchor_point.x:.3f},{palm_anchor_point.y:.3f}) DynROI_X({dynamic_roi_x_min:.2f}-{dynamic_roi_x_max:.2f})")
-
-                if is_hand_in_roi: # If hand is within the DYNAMIC ROI
+                if is_hand_in_roi:
                     update_cursor_this_frame = True
                     roi_width = dynamic_roi_x_max - dynamic_roi_x_min
                     roi_height = dynamic_roi_y_max - dynamic_roi_y_min
-                    if roi_width <= 0: roi_width = 1e-6 # Avoid division by zero/small
+                    if roi_width <= 0: roi_width = 1e-6 
                     if roi_height <= 0: roi_height = 1e-6
 
-                    hand_norm_in_roi_x = np.clip((palm_anchor_point.x - dynamic_roi_x_min) / roi_width, 0.0, 1.0)
-                    hand_norm_in_roi_y = np.clip((palm_anchor_point.y - dynamic_roi_y_min) / roi_height, 0.0, 1.0)
+                    hand_norm_in_roi_x = np.clip((cursor_anchor_point.x - dynamic_roi_x_min) / roi_width, 0.0, 1.0)
+                    hand_norm_in_roi_y = np.clip((cursor_anchor_point.y - dynamic_roi_y_min) / roi_height, 0.0, 1.0)
 
+                    # Using the corrected centered non-linear mapping
                     val_x = hand_norm_in_roi_x
                     if val_x < 0.5: screen_norm_x = 0.5 * pow(val_x * 2.0, ROI_POWER_X)
                     else: screen_norm_x = 1.0 - (0.5 * pow((1.0 - val_x) * 2.0, ROI_POWER_X))
@@ -305,38 +295,32 @@ def main():
                     target_y_for_smoothing = new_target_y
                     last_valid_target_x = new_target_x
                     last_valid_target_y = new_target_y
-                    # print(f"DBG ROI-CALC: Target=({new_target_x},{new_target_y})")
-                # else: print(f"DBG ROI: Hand OUTSIDE DynROI")
+                    # print(f"DBG ROI-CALC (Index Tip): Target=({new_target_x},{new_target_y})")
 
+            # --- Apply Smoothing & Move OS Cursor ---
+            # (This section remains structurally the same)
             current_smoothed_x = int(prev_cursor_x * (1 - CURSOR_SMOOTHING) + target_x_for_smoothing * CURSOR_SMOOTHING)
             current_smoothed_y = int(prev_cursor_y * (1 - CURSOR_SMOOTHING) + target_y_for_smoothing * CURSOR_SMOOTHING)
-
             if can_attempt_cursor_control:
                 if abs(current_smoothed_x - prev_pyautogui_x) > MIN_CURSOR_MOVE_THRESHOLD or \
                    abs(current_smoothed_y - prev_pyautogui_y) > MIN_CURSOR_MOVE_THRESHOLD:
                     pyautogui.moveTo(current_smoothed_x, current_smoothed_y, duration=0)
-                    prev_pyautogui_x = current_smoothed_x
-                    prev_pyautogui_y = current_smoothed_y
-            
-            prev_cursor_x = current_smoothed_x
-            prev_cursor_y = current_smoothed_y
+                    prev_pyautogui_x = current_smoothed_x; prev_pyautogui_y = current_smoothed_y
+            prev_cursor_x = current_smoothed_x; prev_cursor_y = current_smoothed_y
             prev_is_dragon_claw_active = is_dragon_claw_active_current_frame
 
-            # --- Click Logic ---
+            # --- Click Logic (Unchanged - still uses INDEX_TIP and MIDDLE_TIP directly) ---
             if active_hand_landmarks and is_mouse_control_active:
-                # (Your FINGER_TAP_DOWN_Y_DELTA_THRESHOLD click logic - unchanged)
-                current_index_tip_y = get_landmark(active_hand_landmarks, INDEX_TIP).y; current_middle_tip_y = get_landmark(active_hand_landmarks, MIDDLE_TIP).y
-                if current_frame_timestamp_ms - last_left_click_time > CLICK_COOLDOWN_MS and (current_index_tip_y - prev_index_tip_y > FINGER_TAP_DOWN_Y_DELTA_THRESHOLD):
-                    print("LEFT CLICK")
-                    pyautogui.click(button='left'); last_left_click_time = current_frame_timestamp_ms
-                    cv2.circle(display_frame_bgr, (int(get_landmark(active_hand_landmarks, INDEX_TIP).x * display_frame_bgr.shape[1]), int(current_index_tip_y * display_frame_bgr.shape[0])), 15, (0,255,0), -1)
-                if current_frame_timestamp_ms - last_right_click_time > CLICK_COOLDOWN_MS and (current_middle_tip_y - prev_middle_tip_y > FINGER_TAP_DOWN_Y_DELTA_THRESHOLD):
-                    print("RIGHT CLICK")
-                    pyautogui.click(button='right'); last_right_click_time = current_frame_timestamp_ms
-                    cv2.circle(display_frame_bgr, (int(get_landmark(active_hand_landmarks, MIDDLE_TIP).x * display_frame_bgr.shape[1]), int(current_middle_tip_y * display_frame_bgr.shape[0])), 15, (0,128,255), -1)
-                prev_index_tip_y = current_index_tip_y; prev_middle_tip_y = current_middle_tip_y
+                # ... (Your existing tap click logic based on INDEX_TIP.y and MIDDLE_TIP.y)
+                current_index_tip_y_for_click = get_landmark(active_hand_landmarks, INDEX_TIP).y # Explicit for clarity
+                current_middle_tip_y_for_click = get_landmark(active_hand_landmarks, MIDDLE_TIP).y
+                # ... your left click logic ...
+                # ... your right click logic ...
+                prev_index_tip_y = current_index_tip_y_for_click # Update tap prev_y
+                prev_middle_tip_y = current_middle_tip_y_for_click
             
             # --- UI Display ---
+            # ... (FPS, Mode, Claw text unchanged) ...
             new_frame_time = time.time()
             if (new_frame_time - prev_frame_time) > 0: fps = 1 / (new_frame_time - prev_frame_time)
             else: fps = 0; prev_frame_time = new_frame_time
@@ -344,25 +328,16 @@ def main():
             mode_text = f"Mouse Ctrl: {'ON' if is_mouse_control_active else 'OFF'} (M)"; cv2.putText(display_frame_bgr, mode_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0) if is_mouse_control_active else (0,0,255), 2)
             claw_text = f"Claw Active: {'YES' if is_dragon_claw_active_current_frame else 'NO'}"; cv2.putText(display_frame_bgr, claw_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0) if is_dragon_claw_active_current_frame else (128,128,128), 2)
             
-            hand_in_roi_for_display = False # Default
-            if active_hand_landmarks:
-                palm_anchor_point = get_landmark(active_hand_landmarks, WRIST) # Recalculate for safety if not done above this block for UI
-                hand_in_roi_for_display = (palm_anchor_point.x >= dynamic_roi_x_min and palm_anchor_point.x <= dynamic_roi_x_max and \
-                                           palm_anchor_point.y >= dynamic_roi_y_min and palm_anchor_point.y <= dynamic_roi_y_max)
-
-            cursor_status_text = "BLOCKED"
-            if can_attempt_cursor_control and active_hand_landmarks and hand_in_roi_for_display: cursor_status_text = "ACTIVE_IN_ROI"
-            elif can_attempt_cursor_control and active_hand_landmarks: cursor_status_text = "ACTIVE_OUT_ROI"
-            elif can_attempt_cursor_control : cursor_status_text = "NO_HAND_BUT_ALLOWED" # Should not happen if claw needs hand
-            cv2.putText(display_frame_bgr, f"Cursor: {cursor_status_text}", (10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,0) if update_cursor_this_frame else (0,0,255),2)
-
-            # Draw Dynamic ROI
+            # Draw Dynamic ROI, ROI Center, and NEW cursor_anchor_point (INDEX_TIP)
             roi_x_start_px = int(dynamic_roi_x_min * display_frame_bgr.shape[1]); roi_x_end_px = int(dynamic_roi_x_max * display_frame_bgr.shape[1])
             roi_y_start_px = int(dynamic_roi_y_min * display_frame_bgr.shape[0]); roi_y_end_px = int(dynamic_roi_y_max * display_frame_bgr.shape[0])
-            cv2.rectangle(display_frame_bgr, (roi_x_start_px, roi_y_start_px), (roi_x_end_px, roi_y_end_px), (0, 255, 255), 2) # Yellow dynamic ROI
-            cv2.circle(display_frame_bgr, (int(clamped_roi_center_x * display_frame_bgr.shape[1]), int(clamped_roi_center_y * display_frame_bgr.shape[0])), 5, (255,0,255), -1) # ROI Center
-            if active_hand_landmarks: # Draw palm anchor
-                cv2.circle(display_frame_bgr, (int(palm_anchor_point.x * display_frame_bgr.shape[1]), int(palm_anchor_point.y * display_frame_bgr.shape[0])), 7, (0,0,255), -1) # Wrist
+            cv2.rectangle(display_frame_bgr, (roi_x_start_px, roi_y_start_px), (roi_x_end_px, roi_y_end_px), (0, 255, 255), 2) 
+            cv2.circle(display_frame_bgr, (int(clamped_roi_center_x * display_frame_bgr.shape[1]), int(clamped_roi_center_y * display_frame_bgr.shape[0])), 5, (255,0,255), -1) 
+            if cursor_anchor_point: # Draw INDEX_TIP if hand detected
+                 cv2.circle(display_frame_bgr, (int(cursor_anchor_point.x * display_frame_bgr.shape[1]), int(cursor_anchor_point.y * display_frame_bgr.shape[0])), 7, (0,0,255), -1) # Red dot for INDEX_TIP
+
+
+
 
 
             cv2.imshow(window_name, display_frame_bgr)
