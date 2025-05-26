@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>Gesture</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string> <!-- Optional: if you have an icon -->
+    <key>CFBundleIdentifier</key>
+    <string>com.yourdomain.yourappname</string> <!-- IMPORTANT: A unique bundle ID -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSUIElement</key>
+    <false/> <!-- Set to true if you want a faceless background app, false for normal app with dock icon -->
+    
+    <!-- === ADD THIS KEY FOR CAMERA PERMISSION === -->
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs access to your camera to detect hand gestures for cursor and ROI control.</string>
+    
+    <!-- === OPTIONAL BUT RECOMMENDED FOR PYAUTOGUI === -->
+    <key>NSAccessibilityUsageDescription</key>
+    <string>This app needs accessibility permissions to control your mouse and keyboard for HCI interaction.</string>
+
+    <key>NSCameraUsageDescription</key>
+    <string>Gesture Control needs camera access to see your hand and interpret gestures for controlling the mouse and ROI.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Gesture Control requires accessibility permissions to move the mouse cursor and perform clicks based on your hand gestures.</string>
+
+</dict>
+</plist>
